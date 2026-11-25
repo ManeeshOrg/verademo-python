@@ -2,6 +2,8 @@
 import logging
 import subprocess
 import os
+import shlex
+import re
 
 
 from django.shortcuts import render
@@ -39,14 +41,27 @@ def processTools(request):
 def ping(host):
     output = ""
     logger.info("Pinging " + host)
+
+    # Validate host to prevent command injection
+    # Allow only valid hostname/IP characters
+    if not re.match(r'^[a-zA-Z0-9.-]+$', host):
+        logger.error("Invalid host format")
+        return "ping: invalid host format"
+
     try:
-        p = subprocess.Popen(['ping', '-c', '1', host], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        # Use subprocess.run with shell=False for security
+        result = subprocess.run(
+            ['ping', '-c', '1', host],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            timeout=5,
+            shell=False,
+            check=False
+        )
         
-        stdout, stderr = p.communicate(timeout=5)
-    
-        output = stdout.decode() if stdout else ""
+        output = result.stdout.decode() if result.stdout else ""
         logger.info(output)
-        logger.info("Exit Code:", p.returncode)
+        logger.info("Exit Code:", result.returncode)
     except subprocess.TimeoutExpired:
         logger.error("Ping timed out")
         output = "ping: unknown host " + host
@@ -63,9 +78,26 @@ def fortune(file):
         return FortuneData()
     elif file == 'riddles':
         return RiddleData()
-    # OS Command Injection CWE-78
+    # OS Command Injection CWE-78 - Fixed
     else:
-        os.system(f'cat {file}')
+        # Validate file parameter - allow only alphanumeric, dash, underscore, and dot
+        if not re.match(r'^[a-zA-Z0-9._-]+$', file):
+            logger.error("Invalid file format")
+            return "Error: invalid file format"
+
+        # Use subprocess.run with shell=False instead of os.system
+        try:
+            result = subprocess.run(
+                ['cat', file],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                shell=False,
+                check=False
+            )
+            return result.stdout.decode() if result.stdout else ""
+        except Exception as e:
+            logger.error("Error reading file", e)
+            return "Error reading file"
    
         
 
